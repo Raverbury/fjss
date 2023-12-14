@@ -8,6 +8,7 @@ class FlexibleJobSchedulingProblem(object):
     ops_per_job: list[int]
     time_required_for_job_op: list[list[list[int]]]
     available_machines_for_job_op: list[list[list[int]]]
+    input_file: str
 
     SWITCH_MACHINE_CHANCE = 0.8
 
@@ -21,6 +22,7 @@ class FlexibleJobSchedulingProblem(object):
         self.ops_per_job = []
         self.time_required_for_job_op = []
         self.available_machines_for_job_op = []
+        self.input_file = input_file_path
 
         with open(input_file_path, "r") as fin:
             lines = [line.strip() for line in fin.readlines() if (line and not line.startswith(('#', '//')))]
@@ -35,6 +37,7 @@ class FlexibleJobSchedulingProblem(object):
                 line_index += 1
                 current_line = lines[line_index]
                 number_of_ops_for_this_job = int(current_line[0].strip())
+                self.number_of_ops += number_of_ops_for_this_job
                 self.ops_per_job.append(number_of_ops_for_this_job)
                 self.time_required_for_job_op.append([])
                 self.available_machines_for_job_op.append([])
@@ -77,7 +80,7 @@ class FlexibleJobSchedulingProblem(object):
             else:
                 pool[random_job_id].append(random_op_id + 1)
 
-        return string
+        return string.strip()
 
     def get_random_neighbor_solution(self, current_solution: str):
         struct_solution = FlexibleJobSchedulingProblem.parse_solution(current_solution)
@@ -170,7 +173,7 @@ class FlexibleJobSchedulingProblem(object):
         result = ''
         for op in struct_solution:
             result += '-'.join([str(num) for num in op]) + ' '
-        return result
+        return result.strip()
 
     def solution_is_valid(self, string_solution: str) -> bool:
         struct_sol = FlexibleJobSchedulingProblem.parse_solution(string_solution)
@@ -202,6 +205,7 @@ class FlexibleJobSchedulingProblem(object):
             
             if machine_time_table[machine_id][0] == -1:
                 machine_time_table[machine_id][0] = earliest_possible_start_time
+            machine_time_table[machine_id][1] = earliest_possible_start_time
             machine_time_table[machine_id][1] += time_required
             
             next_op_id = op_id + 1
@@ -214,3 +218,65 @@ class FlexibleJobSchedulingProblem(object):
         latest_machine_end_time = max(end_times)
 
         return latest_machine_end_time - earliest_machine_start_time
+
+    def get_evaluated_visualization(self, string_solution: str, cell_width: int = 10):
+        max_num_of_ops_across_jobs = max([x for x in self.ops_per_job])
+        min_cell_width = len(str(self.number_of_jobs)) + len(str(max_num_of_ops_across_jobs)) + 7
+        cell_width = min_cell_width if cell_width < min_cell_width else cell_width
+        struct_solution = FlexibleJobSchedulingProblem.parse_solution(string_solution)
+        machine_time_table = {machine_id: [-1, 0] for machine_id in range(self.number_of_machines)}
+        makespan = self.evaluate_solution(string_solution)
+        result = ''
+        actual_machine_time_table = [
+            [' '.center(cell_width, ' ') for y in range(makespan + 1)]
+            for x in range(self.number_of_machines + 1)]
+        # create headers
+        for col_id in range(len(actual_machine_time_table[0])):
+            if col_id > 0:
+                actual_machine_time_table[0][col_id] = f't={col_id - 1}'.center(cell_width)
+        for row_id in range(len(actual_machine_time_table)):
+            if row_id > 0:
+                actual_machine_time_table[row_id][0] = f'm={row_id - 1}'.center(cell_width)
+
+        earliest_start_time_for_ops = [[-1] * self.ops_per_job[job_id] for job_id in range(self.number_of_jobs)]
+        for job_id in range(self.number_of_jobs):
+            if self.ops_per_job[job_id] > 0:
+                earliest_start_time_for_ops[job_id][0] = 0
+
+        for op in struct_solution:
+            job_id = op[0]
+            op_id = op[1]
+            machine_id = op[2]
+
+            time_required = self.time_required_for_job_op[job_id][op_id][machine_id]
+            earliest_possible_start_time = max(machine_time_table[machine_id][1],
+                                               earliest_start_time_for_ops[job_id][op_id])
+
+            if machine_time_table[machine_id][0] == -1:
+                machine_time_table[machine_id][0] = earliest_possible_start_time
+            machine_time_table[machine_id][1] = earliest_possible_start_time
+            machine_time_table[machine_id][1] += time_required
+            op_start_time = earliest_possible_start_time
+            op_end_time = machine_time_table[machine_id][1]
+            candidate_string = f'{job_id}-{op_id}'
+            prefix = '{'
+            postfix = '}'
+            candidate_string = prefix + candidate_string.center(
+                cell_width * (op_end_time - op_start_time) - len(prefix) - len(postfix), '_') + postfix
+            for t in range(op_start_time, op_end_time):
+                actual_machine_time_table[machine_id + 1][t + 1] \
+                    = candidate_string[cell_width * (t - op_start_time):cell_width * (t - op_start_time + 1)]
+
+            next_op_id = op_id + 1
+            if next_op_id <= len(earliest_start_time_for_ops[job_id]) - 1:
+                earliest_start_time_for_ops[job_id][next_op_id] = machine_time_table[machine_id][1]
+
+        for actual_machine_time in actual_machine_time_table:
+            for cell in actual_machine_time:
+                result += cell
+            result += '\n'
+
+        return result
+
+    def visualize(self, string_solution: str, cell_width: int = 10):
+        print(self.get_evaluated_visualization(string_solution, cell_width))
