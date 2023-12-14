@@ -30,11 +30,12 @@ class TabuSearch(object):
         start_time = time.time()
         log = ''
         current_iteration = 0
+        timed_out = False
 
         init_non = number_of_neighbors
         if number_of_neighbors == -1:
             number_of_neighbors = int(float(math.factorial(fjs.number_of_ops) *
-                                            (fjs.number_of_ops ** fjs.number_of_machines)) / 100)
+                                            (fjs.number_of_machines ** fjs.number_of_ops)) / number_of_iterations)
         number_of_neighbors = min(500, max(50, number_of_neighbors))
 
         # add this iter's best sols to tabu, sort these sols and pick the first one as next iter's sol, could also
@@ -51,6 +52,7 @@ class TabuSearch(object):
             if elapsed >= timeout_duration:
                 print('Timed out!')
                 log += f'- !!! Timed out!\n'
+                timed_out = True
                 break
 
             # gen list of neighbors
@@ -107,7 +109,6 @@ class TabuSearch(object):
                 rollback_makespan = fjs.evaluate_solution(current_solution)
                 log += f'- !!! Stuck for too long, backtracking to {current_solution} with makespan {rollback_makespan}!\n'
 
-            current_iteration += 1
             log += '\n'
 
         # actually finish making the final solution
@@ -118,7 +119,8 @@ class TabuSearch(object):
         header_log += f'- Input obtained from {fjs.input_file}:\n\n'
         with open(fjs.input_file, 'rt') as f:
             header_log += f.read() + '\n\n'
-        header_log += f'- Completed {current_iteration} out of {number_of_iterations} iterations\n'
+        num_of_completed_iterations = current_iteration if timed_out else current_iteration + 1
+        header_log += f'- Completed {num_of_completed_iterations} out of {number_of_iterations} iterations\n'
         header_log += f'- number_of_iteration was {number_of_iterations}\n'
         header_log += f'- tabu_size was {tabu_size}\n'
         header_log += f'- reset_threshold was {reset_threshold}\n'
