@@ -1,5 +1,6 @@
 import math
 import time
+import heapq
 from tqdm.auto import tqdm
 from problems.fjs import FlexibleJobSchedulingProblem
 
@@ -19,7 +20,9 @@ class TabuSearch(object):
         :param timeout_duration: The algo will only run for this amount of time, set to -1 if endless is desired
         :returns: tuple (best visualized solutions: list, best makespan: int, log: str)
         """
-        all_solutions: dict[int, set[str]] = dict()
+        all_solutions_dict_with_makespan_as_key: dict[int, set[str]] = dict()
+        all_solutions = []
+        all_solutions_dict_with_sol_as_key: dict[str, int] = dict()
         best_solutions: list[str] = []
         best_makespan: int = -1
         tabu_list: UniqueQueue = UniqueQueue()
@@ -31,6 +34,7 @@ class TabuSearch(object):
         log = ''
         current_iteration = 0
         timed_out = False
+        tabu_block_counter = 0
 
         init_non = number_of_neighbors
         if number_of_neighbors == -1:
@@ -62,6 +66,7 @@ class TabuSearch(object):
                 # remove neighbor who's in the tabu
                 if new_neighbor not in tabu_list:  # maybe add a valid check here?
                     neighbors.append(new_neighbor)
+                    tabu_block_counter += 1
             neighbor_solutions_with_makespan = dict()
 
             # eval make span for all neighbors
@@ -71,10 +76,13 @@ class TabuSearch(object):
                 if makespan not in neighbor_solutions_with_makespan:
                     neighbor_solutions_with_makespan[makespan] = set()
                 neighbor_solutions_with_makespan[makespan].add(neighbor_solution)
-                if makespan not in all_solutions:
+                if makespan not in all_solutions_dict_with_makespan_as_key:
                     lst = set()
-                    all_solutions[makespan] = lst
-                all_solutions[makespan].add(neighbor_solution)
+                    all_solutions_dict_with_makespan_as_key[makespan] = lst
+                all_solutions_dict_with_makespan_as_key[makespan].add(neighbor_solution)
+                if neighbor_solution not in all_solutions_dict_with_sol_as_key:
+                    all_solutions_dict_with_sol_as_key[neighbor_solution] = makespan
+                    heapq.heappush(all_solutions, neighbor_solution)
             makespans = list(neighbor_solutions_with_makespan.keys())
             best_makespan_this_iter = min(makespans)
             log += f'- All-time best makespan: {best_makespan}\n'
@@ -126,16 +134,27 @@ class TabuSearch(object):
         header_log += f'- reset_threshold was {reset_threshold}\n'
         header_log += f'- number_of_neighbors was {init_non} -> {number_of_neighbors}\n'
         header_log += f'- timeout_duration was {timeout_duration}\n'
-        num_of_all_sols = sum([len(x) for x in all_solutions.values()])
+        num_of_all_sols = sum([len(x) for x in all_solutions_dict_with_makespan_as_key.values()])
         header_log += (f'- Explored {num_of_all_sols} ' +
                        'unique string solutions, distribution is as follows:\n')
-        for key in all_solutions.keys():
-            num_of_sols = len(all_solutions[key])
+        for key in all_solutions_dict_with_makespan_as_key.keys():
+            num_of_sols = len(all_solutions_dict_with_makespan_as_key[key])
             percentage = '{:.2f}'.format((float(num_of_sols) / float(num_of_all_sols) * 100))
             header_log += f'  + Makespan of {key}: {num_of_sols} unique string solutions ({percentage}%)\n'
-        header_log += f'- Best makespan found was {min(all_solutions.keys())}\n'
+        header_log += f'- Best makespan found was {min(all_solutions_dict_with_makespan_as_key.keys())}\n'
+        header_log += f'- Tabu list prevented {tabu_block_counter} solutions from being revisited (before uniqueness)\n'
 
         log = header_log + '\n# Tabu search details\n' + log
+
+        # Do not uncomment this unless you can plot this in a real plot with a real plotting lib
+        # or if you like flooding your log file with a LOT of ########
+        # sol_space_log = '\n# Solution space visualization, sorted by string solution\n'
+        # while len(all_solutions) > 0:
+        #     solution = heapq.heappop(all_solutions)
+        #     makespan = all_solutions_dict_with_sol_as_key[solution]
+        #     sol_space_log += ''.ljust(makespan, '#') + '\n'
+        #
+        # log = log + sol_space_log
 
         return best_makespan, list(visualized_best_solutions), log
 
