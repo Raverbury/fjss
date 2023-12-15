@@ -23,10 +23,10 @@ def __main__():
                             'Defaults to 100. If -1 the program will infer from the given input, result ' +
                             '= (!num_of_ops * (num_of_ops ** num_of_machines)) / 100, clamped between 50 and 500')
     arg_parser.add_argument('--tabu_size', '-t',
-                            default=20,
+                            default=500,
                             type=int,
                             help='The size of the tabu list, automatically removing older entries if exceeding. ' +
-                            'Defaults to 20')
+                            'Defaults to 500')
     arg_parser.add_argument('--stuck_reset_threshold', '-s',
                             default=10,
                             type=int,

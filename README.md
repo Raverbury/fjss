@@ -59,8 +59,9 @@ pip install -r requirements.txt
 - Modify inputs as needed in main.py or whatever
 - Run the program (assuming you didn't drastically change it):
 ```shell
-python main.py
+python main.py <input file path> <number of iterations>
 ```
+Or pass -h flag to see a list of all arguments the program accepts
 - "Yes I could have made it more user-friendly by setting up batch run, pytest and all that good stuff. But the client
 didn't request such features... and I'm not getting paid anyway."
 

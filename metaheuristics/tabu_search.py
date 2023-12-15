@@ -24,10 +24,10 @@ class TabuSearch(object):
         all_solutions = []
         all_solutions_dict_with_sol_as_key: dict[str, int] = dict()
         best_solutions: list[str] = []
-        best_makespan: int = -1
         tabu_list: UniqueQueue = UniqueQueue()
         initial_solution = fjs.get_random_solution()
         current_solution = initial_solution
+        best_makespan: int = fjs.evaluate_solution(initial_solution)
         rollback_stack: set[str] = set()
         stuck_counter = 0
         start_time = time.time()
@@ -42,11 +42,6 @@ class TabuSearch(object):
                                             (fjs.number_of_machines ** fjs.number_of_ops)) / number_of_iterations)
         number_of_neighbors = min(500, max(50, number_of_neighbors))
 
-        # add this iter's best sols to tabu, sort these sols and pick the first one as next iter's sol, could also
-        # be last and reversed when inserting into tabu
-        # if stuck counter pass the reset threshold, pop the most recent sol in tabu stack, use the next most recent
-        # or init if empty sol as the next iter's sol
-
         for current_iteration in tqdm(range(number_of_iterations)):
             log += f'## Iteration {current_iteration}\n'
             current_makespan = fjs.evaluate_solution(current_solution)
@@ -60,14 +55,16 @@ class TabuSearch(object):
                 break
 
             # gen list of neighbors
-            neighbors = []
+            neighbors = set()
             for i in range(number_of_neighbors):
                 new_neighbor = fjs.get_random_neighbor_solution(current_solution)
+                neighbors.add(new_neighbor)
                 # remove neighbor who's in the tabu
-                if new_neighbor not in tabu_list:  # maybe add a valid check here?
-                    neighbors.append(new_neighbor)
+                if new_neighbor in tabu_list:  # maybe add a valid check here?
+                    neighbors.remove(new_neighbor)
                     tabu_block_counter += 1
             neighbor_solutions_with_makespan = dict()
+            neighbors = list(neighbors)
 
             # eval make span for all neighbors
             # add every new sol to all sol list
@@ -91,7 +88,10 @@ class TabuSearch(object):
             # best neighbors of this iter
             best_neighbors = sorted(neighbor_solutions_with_makespan[best_makespan_this_iter])
 
-            # if there are better sols, update all-time best, else increase stuck counter
+            # if there are sols with similar makespans, add them to current best sol list
+            if best_makespan_this_iter == best_makespan or best_makespan == -1:
+                best_solutions += best_neighbors
+            # if there are better sols, update all-time bests, else increase stuck counter
             if best_makespan_this_iter < best_makespan or best_makespan == -1:
                 best_makespan = best_makespan_this_iter
                 best_solutions = best_neighbors
@@ -100,19 +100,33 @@ class TabuSearch(object):
                 stuck_counter += 1
                 log += f'- Stuck counter: {stuck_counter}/{reset_threshold}\n'
 
-            tabu_list.push(best_neighbors[-1])
-            if len(tabu_list) > tabu_size:
+            tabu_list.push(best_neighbors[0])
+            while len(tabu_list) > tabu_size:
                 tabu_list.pop()
-            current_solution = best_neighbors[-1]
+            current_solution = best_neighbors[0]
             for best_neighbor in reversed(best_neighbors):
                 rollback_stack.add(best_neighbor)
 
-            # if stuck for too long, backtrack and remove the next backtrack target from tabu
+            # if stuck for too long, backtrack to an earlier neighbor
             if stuck_counter >= reset_threshold:
                 stuck_counter = 0
-                rollback_solution = rollback_stack.pop() if len(rollback_stack) > 0 else initial_solution
-                if rollback_solution in tabu_list:
-                    tabu_list.remove(rollback_solution)
+                tmp_rollback_stack = rollback_stack.copy()
+                rollback_solution = None
+                # choose backtrack target that's not in tabu, if none is found then use initial sol
+                while len(tmp_rollback_stack) > 0:
+                    rollback_solution = tmp_rollback_stack.pop()
+                    # if backtrack is in tabu then reject it to make it consistent with when filtering new neighbors
+                    if rollback_solution in tabu_list:
+                        rollback_solution = None
+                    # add backtrack target to tabu to make it consistent with when promoting a better neighbor
+                    else:
+                        tabu_list.push(rollback_solution)
+                        while len(tabu_list) > tabu_size:
+                            tabu_list.pop()
+                        break
+                # if can't find any valid rollback then use initial sol
+                if rollback_solution is None:
+                    rollback_solution = initial_solution
                 current_solution = rollback_solution
                 rollback_makespan = fjs.evaluate_solution(current_solution)
                 log += f'- !!! Stuck for too long, backtracking to {current_solution} with makespan {rollback_makespan}!\n'
@@ -121,8 +135,9 @@ class TabuSearch(object):
 
         # actually finish making the final solution
         # string results are only partially completed and may yield duplicate result
-        visualized_best_solutions = set([fjs.get_evaluated_visualization(sol) for sol in best_solutions])
+        visualized_best_solutions = list(set([fjs.get_evaluated_visualization(sol) for sol in best_solutions]))
 
+        # logging
         header_log = '# Tabu search summary\n'
         header_log += f'- Input obtained from {fjs.input_file}:\n\n'
         with open(fjs.input_file, 'rt') as f:
@@ -137,12 +152,16 @@ class TabuSearch(object):
         num_of_all_sols = sum([len(x) for x in all_solutions_dict_with_makespan_as_key.values()])
         header_log += (f'- Explored {num_of_all_sols} ' +
                        'unique string solutions, distribution is as follows:\n')
-        for key in all_solutions_dict_with_makespan_as_key.keys():
+        for key in sorted(all_solutions_dict_with_makespan_as_key.keys()):
             num_of_sols = len(all_solutions_dict_with_makespan_as_key[key])
             percentage = '{:.2f}'.format((float(num_of_sols) / float(num_of_all_sols) * 100))
             header_log += f'  + Makespan of {key}: {num_of_sols} unique string solutions ({percentage}%)\n'
-        header_log += f'- Best makespan found was {min(all_solutions_dict_with_makespan_as_key.keys())}\n'
-        header_log += f'- Tabu list prevented {tabu_block_counter} solutions from being revisited (before uniqueness)\n'
+        header_log += f'- Tabu list prevented {tabu_block_counter} unique string solutions from being revisited\n'
+        # header_log += f'- Best makespan found was {min(all_solutions_dict_with_makespan_as_key.keys())}\n'
+        header_log += f'- Best makespan found was {best_makespan}\n'
+        header_log += f'- Found these unique visualized solutions with makespan of {best_makespan}:\n'
+        for uvs in visualized_best_solutions:
+            header_log += f'\n{uvs}\n'
 
         log = header_log + '\n# Tabu search details\n' + log
 
@@ -156,7 +175,7 @@ class TabuSearch(object):
         #
         # log = log + sol_space_log
 
-        return best_makespan, list(visualized_best_solutions), log
+        return best_makespan, visualized_best_solutions, log
 
 
 class UniqueQueue(object):
